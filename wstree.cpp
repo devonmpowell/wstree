@@ -10,31 +10,31 @@
 ***************************************************/
 
 #include <cstdio>
-#include <cmath>
+//#include <cmath>
 #include <vector>
 #include <algorithm>
 #include <string>
-#include <functional>
+#include <cstdint>
+#include <cfloat>
 #include "HDF_IO.hh"
 
+// custom macros and typedefs
 using namespace std;
+typedef uint32_t uint;
+#define uint_max UINT32_MAX
 
-// other
-void init();
-void release();
+// forward declarations
 void read_hdf5(string filename, string fieldname);
 void write_hdf5();
+void argsort();
+void watershed();
 
-vector<ulong> argsort(const vector<double> &field);
-
-typedef unsigned long ulong;
-
-
-// data arrays
-ulong nx, ny, nz, ntot;
+// global data arrays
+uint nx, ny, nz, ntot;
 vector<double> field;
-vector<ulong> inds_sorted;
-
+vector<uint> inds_sorted;
+uint nzones;
+vector<uint> zones; 
 
 int main(int argc, char **argv) {
 
@@ -48,70 +48,65 @@ int main(int argc, char **argv) {
 
 	*/
 
-	// set up the simulation and allocate memory
-	
 	//readInput(argv[1]);
-	init(); 
+	printf("-------------------------------------\n");
 	read_hdf5("data/dset128.hdf5", "RHO");
+	printf("-------------------------------------\n");
+	argsort();
+	printf("-------------------------------------\n");
+	watershed();
+	printf("-------------------------------------\n");
 
+	//write_hdf5();
 
-	printf("Testing argsort code...\n");
-
-	vector<double> unsorted {1.0, 0.9, 0.5, 3.0, 4.0, 1.6, 1.5};
-/*	vector<int> indices(unsorted.size());
-
-	int i_tmp = 0;
-	generate(indices.begin(), indices.end(), [&] { return i_tmp++; });
-
-
-	for(int i = 0; i < unsorted.size(); ++i) {
-		printf("%d\t%f\n", indices[i], unsorted[i]);
-	}
-		
-	printf("Sorting...\n");
-*/
-	vector<ulong> inds_sorted = argsort(unsorted);
-
-	
-	for(int i = 0; i < unsorted.size(); ++i) {
-		printf("%d\t%f\n", inds_sorted[i], unsorted[inds_sorted[i]]);
-	}
-
-
-
-	write_hdf5();
-
-	// free up pointers
-	release();
-	
 	return 0;    
 }
 
 
-void read_hdf5(string filename, string fieldname) {
+void watershed() {
 
-	vector<int> dims;
+	printf("Running watershed transform...");
 
-	HDFGetDatasetExtent(filename, fieldname, dims);
+	nzones = 0;
+	zones.assign(ntot, uint_max); // unassigned zones use uint_max
 
-	for(int i = 0; i < dims.size(); ++i) {
-		printf("%d ", dims[i]);
+	for(uint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
+
+		uint ind_flat = inds_sorted[ind_uns];
+		//printf("%u\t%f\n", ind_flat, field[ind_flat]);	
+
+		// get 3D indices from ind_flat
+		uint i_x = ind_flat%(ny*nz);
+		uint i_y = (ind_flat - i_x*ny*nz)%nz;
+		uint i_z = ind_flat - i_x*ny*nz - i_y*nz;
+
+		// iterate over the 27 neighboring cells
+		double dmin = DBL_MAX; 
+		uint zmin = uint_max;
+		for(int o_x = -1; o_x <= 1; ++o_x) {
+			for(int o_y = -1; o_y <= 1; ++o_y) {
+				for(int o_z = -1; o_z <= 1; ++o_z) {
+
+					// get neighboring flat indices, accounting for periodicity
+					uint tmp_flat = ((i_x + o_x + nx)%nx)*ny*nz + ((i_y + o_y + ny)%ny)*nz + (i_z + o_z + nz)%nz;
+
+					// a neighboring zone has been assigned
+					if(zones[tmp_flat] < zmin) {
+						// TODO: This disambiguation has an inherent bias towards deeper voids!
+						zmin = zones[tmp_flat];
+						zones[ind_flat] = zmin;
+					}
+				}
+			}
+		}
+		if(zmin == uint_max) {
+			zones[ind_flat] = ++nzones;
+		}
+		
 	}
-	printf("\n");
 
-
-	vector<double> data;
-
-	HDFReadDataset(filename, fieldname, data);
-	printf("Read %d data values.\n", data.size());
-	printf("Sorting...\n");
-	sort(data.begin(), data.end());
-	printf("...done.\n");
-
-	for(int i = 0; i < 50; ++i) {
-		printf("%f ", data[i]);
-	}
-	printf("\n");
+	printf(" done.\n");
+	printf("  Found %u distinct zones.\n", nzones);
 
 }
 
@@ -120,13 +115,6 @@ void write_hdf5() {
 	char* outfilename = "output/test.hdf5";
 
 	printf("Writing to file: %s...\n", outfilename);
-
-	cudaMemcpy(pos_h, pos_d, npart*sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(vel_h, vel_d, npart*sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(phi_h, phi_d, ngrid*sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(rho_h, rho_d, ngrid*sizeof(float), cudaMemcpyDeviceToHost);
-	cudaErrCheck("Copy device arrays to host");
-
 	vector<float> pos_v(pos_h, pos_h + npart);
 	vector<float> vel_v(vel_h, vel_h + npart);
 	vector<float> phi_v(phi_h, phi_h + ngrid);
@@ -142,30 +130,31 @@ void write_hdf5() {
 */
 }
 
-void init() {
-
-	printf("Initializing...\n");
-
-
-}
-
-void release() {
-
-	//free(pos_h); free(vel_h); free(phi_h); free(rho_h);
-	//cudaFree(pos_d); cudaFree(vel_d); cudaFree(phi_d); cudaFree(rho_d);
-
+// read in a multidimensional hdf5 file
+void read_hdf5(string filename, string fieldname) {
+	printf("Reading field %s from file %s...", fieldname.c_str(), filename.c_str());
+	vector<int> dims;
+	HDFGetDatasetExtent(filename, fieldname, dims);
+	nx = dims[0]; ny = dims[1]; nz = dims[2];
+	ntot = nx*ny*nz;
+	HDFReadDataset(filename, fieldname, field);
+	printf(" done.\n");
+	printf("  Read %d data values.\n", field.size());
+	printf("  nx = %d, ny = %d, nz = %d for %d total.\n", nx, ny, nz, ntot);
 	return;
 }
 
+
 // helper function for argsort
-bool indcmp(int a, int b, vector<double> &field) {
+bool indcmp(int a, int b) {
 	return field[a] < field[b];
 }
-vector<ulong> argsort(const vector<double> &field) {
-	vector<ulong> indices(field.size());
+void argsort() {
+	printf("Sorting array indices...");
+	inds_sorted.resize(ntot);
 	int i_tmp = 0;
-	generate(indices.begin(), indices.end(), [&] { return i_tmp++; });
-	sort(indices.begin(), indices.end(), bind(indcmp, placeholders::_1, placeholders::_2, field));
-	return indices;
+	generate(inds_sorted.begin(), inds_sorted.end(), [&] { return i_tmp++; });
+	sort(inds_sorted.begin(), inds_sorted.end(), indcmp);
+	printf(" done.\n");
 }
 
