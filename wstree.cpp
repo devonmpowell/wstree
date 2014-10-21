@@ -12,6 +12,9 @@
 #include <cstdio>
 #include <cmath>
 #include <vector>
+#include <algorithm>
+#include <string>
+#include <functional>
 #include "HDF_IO.hh"
 
 using namespace std;
@@ -19,7 +22,19 @@ using namespace std;
 // other
 void init();
 void release();
+void read_hdf5(string filename, string fieldname);
 void write_hdf5();
+
+vector<ulong> argsort(const vector<double> &field);
+
+typedef unsigned long ulong;
+
+
+// data arrays
+ulong nx, ny, nz, ntot;
+vector<double> field;
+vector<ulong> inds_sorted;
+
 
 int main(int argc, char **argv) {
 
@@ -37,10 +52,34 @@ int main(int argc, char **argv) {
 	
 	//readInput(argv[1]);
 	init(); 
+	read_hdf5("data/dset128.hdf5", "RHO");
+
+
+	printf("Testing argsort code...\n");
+
+	vector<double> unsorted {1.0, 0.9, 0.5, 3.0, 4.0, 1.6, 1.5};
+/*	vector<int> indices(unsorted.size());
+
+	int i_tmp = 0;
+	generate(indices.begin(), indices.end(), [&] { return i_tmp++; });
+
+
+	for(int i = 0; i < unsorted.size(); ++i) {
+		printf("%d\t%f\n", indices[i], unsorted[i]);
+	}
+		
+	printf("Sorting...\n");
+*/
+	vector<ulong> inds_sorted = argsort(unsorted);
+
+	
+	for(int i = 0; i < unsorted.size(); ++i) {
+		printf("%d\t%f\n", inds_sorted[i], unsorted[inds_sorted[i]]);
+	}
 
 
 
-//	write_hdf5();
+	write_hdf5();
 
 	// free up pointers
 	release();
@@ -49,6 +88,32 @@ int main(int argc, char **argv) {
 }
 
 
+void read_hdf5(string filename, string fieldname) {
+
+	vector<int> dims;
+
+	HDFGetDatasetExtent(filename, fieldname, dims);
+
+	for(int i = 0; i < dims.size(); ++i) {
+		printf("%d ", dims[i]);
+	}
+	printf("\n");
+
+
+	vector<double> data;
+
+	HDFReadDataset(filename, fieldname, data);
+	printf("Read %d data values.\n", data.size());
+	printf("Sorting...\n");
+	sort(data.begin(), data.end());
+	printf("...done.\n");
+
+	for(int i = 0; i < 50; ++i) {
+		printf("%f ", data[i]);
+	}
+	printf("\n");
+
+}
 
 void write_hdf5() {
 /*
@@ -79,7 +144,7 @@ void write_hdf5() {
 
 void init() {
 
-	printf("Initializing...");
+	printf("Initializing...\n");
 
 
 }
@@ -92,4 +157,15 @@ void release() {
 	return;
 }
 
+// helper function for argsort
+bool indcmp(int a, int b, vector<double> &field) {
+	return field[a] < field[b];
+}
+vector<ulong> argsort(const vector<double> &field) {
+	vector<ulong> indices(field.size());
+	int i_tmp = 0;
+	generate(indices.begin(), indices.end(), [&] { return i_tmp++; });
+	sort(indices.begin(), indices.end(), bind(indcmp, placeholders::_1, placeholders::_2, field));
+	return indices;
+}
 
