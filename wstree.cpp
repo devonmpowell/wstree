@@ -70,18 +70,21 @@ void watershed() {
 	nzones = 0;
 	zones.assign(ntot, uint_max); // unassigned zones use uint_max
 
+	int cc = 0;
 	for(uint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
 
 		uint ind_flat = inds_sorted[ind_uns];
 		//printf("%u\t%f\n", ind_flat, field[ind_flat]);	
 
 		// get 3D indices from ind_flat
-		uint i_x = ind_flat%(ny*nz);
-		uint i_y = (ind_flat - i_x*ny*nz)%nz;
+		uint i_x = ind_flat/(ny*nz);
+		uint i_y = (ind_flat - i_x*ny*nz)/nz;
 		uint i_z = ind_flat - i_x*ny*nz - i_y*nz;
 
+	//	printf("%u\t%u\t%u\n", i_x, i_y, i_z);
+
 		// iterate over the 27 neighboring cells
-		double dmin = DBL_MAX; 
+		//double dmin = DBL_MAX; 
 		uint zmin = uint_max;
 		for(int o_x = -1; o_x <= 1; ++o_x) {
 			for(int o_y = -1; o_y <= 1; ++o_y) {
@@ -102,7 +105,9 @@ void watershed() {
 		if(zmin == uint_max) {
 			zones[ind_flat] = ++nzones;
 		}
-		
+
+	//	if(cc > 20) break;
+		++cc;
 	}
 
 	printf(" done.\n");
