@@ -49,14 +49,15 @@ int main(int argc, char **argv) {
 
 	//readInput(argv[1]);
 	printf("-------------------------------------\n");
-	//read_hdf5("data/200Mpc-256p-exact-256g-rho.hdf5", "RHO");
-	read_hdf5("data/dset128.hdf5", "RHO");
+	read_hdf5("data/200Mpc-256p-exact-256g-rho.hdf5", "RHO");
+	//read_hdf5("data/dset128.hdf5", "RHO");
 	printf("-------------------------------------\n");
 	argsort();
 	printf("-------------------------------------\n");
 	watershed();
 	printf("-------------------------------------\n");
-	write_hdf5("output/ws128.hdf5", "WS");
+	write_hdf5("output/ws256.hdf5", "WS");
+	//write_hdf5("output/ws128.hdf5", "WS");
 	printf("-------------------------------------\n");
 
 	//write_hdf5();
@@ -84,7 +85,9 @@ void watershed() {
 		uint iz = ind_flat - ix*ny*nz - iy*nz;
 
 		// iterate over the 27 neighboring cells
-		double dmin = field[ind_flat]; 
+		double f0 = field[ind_flat];
+		//double dmin = f0; 
+		double grad_max = 0.0; 
 		uint zmin = zones[ind_flat];// = uint_max;
 		for(int ox = -1; ox <= 1; ++ox) {
 			for(int oy = -1; oy <= 1; ++oy) {
@@ -95,10 +98,16 @@ void watershed() {
 					// get neighboring flat indices, accounting for periodicity
 					uint tmp_flat = ((ix + ox + nx)%nx)*ny*nz + ((iy + oy + ny)%ny)*nz + ((iz + oz + nz)%nz);
 
-				//	if(zones[tmp_flat] < zmin) { // This disambiguation has an inherent bias towards deeper voids!
-					if(field[tmp_flat] < dmin) { // finds the neighboring cell with the lowest density 
+					// divide by the pixel distance to isotropize the neighbor stencil
+					double grad = (f0 - field[tmp_flat])/sqrt(ox*ox + oy*oy + oz*oz);
+
+					//if(zones[tmp_flat] < zmin) { // This disambiguation has an inherent bias towards deeper voids!
+					//if(field[tmp_flat] < dmin) { // finds the neighboring cell with the lowest density 
+					if(grad > grad_max) { // finds the largest gradient to a neighboring cell 
 					
-						dmin = field[tmp_flat];
+						//dmin = field[tmp_flat];
+						grad_max = grad;
+						
 						zmin = zones[tmp_flat];
 						zones[ind_flat] = zmin;
 					}
@@ -139,9 +148,7 @@ void write_hdf5(string filename, string fieldname) {
 	printf(" done.\n");
 }
 
-
-// helper function for argsort
-bool indcmp(int a, int b) {
+bool indcmp(int a, int b) { // helper function for argsort
 	return field[a] < field[b];
 }
 void argsort() {
