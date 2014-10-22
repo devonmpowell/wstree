@@ -10,7 +10,6 @@
 ***************************************************/
 
 #include <cstdio>
-//#include <cmath>
 #include <vector>
 #include <algorithm>
 #include <string>
@@ -25,7 +24,7 @@ typedef uint32_t uint;
 
 // forward declarations
 void read_hdf5(string filename, string fieldname);
-void write_hdf5();
+void write_hdf5(string filename, string fieldname);
 void argsort();
 void watershed();
 
@@ -50,11 +49,14 @@ int main(int argc, char **argv) {
 
 	//readInput(argv[1]);
 	printf("-------------------------------------\n");
+	//read_hdf5("data/200Mpc-256p-exact-256g-rho.hdf5", "RHO");
 	read_hdf5("data/dset128.hdf5", "RHO");
 	printf("-------------------------------------\n");
 	argsort();
 	printf("-------------------------------------\n");
 	watershed();
+	printf("-------------------------------------\n");
+	write_hdf5("output/ws128.hdf5", "WS");
 	printf("-------------------------------------\n");
 
 	//write_hdf5();
@@ -65,37 +67,38 @@ int main(int argc, char **argv) {
 
 void watershed() {
 
-	printf("Running watershed transform...");
+	printf(" Running watershed transform...");
 
 	nzones = 0;
 	zones.assign(ntot, uint_max); // unassigned zones use uint_max
 
-	int cc = 0;
 	for(uint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
 
+		// get the flattened array index
 		uint ind_flat = inds_sorted[ind_uns];
-		//printf("%u\t%f\n", ind_flat, field[ind_flat]);	
+
 
 		// get 3D indices from ind_flat
-		uint i_x = ind_flat/(ny*nz);
-		uint i_y = (ind_flat - i_x*ny*nz)/nz;
-		uint i_z = ind_flat - i_x*ny*nz - i_y*nz;
-
-	//	printf("%u\t%u\t%u\n", i_x, i_y, i_z);
+		uint ix = ind_flat/(ny*nz);
+		uint iy = (ind_flat - ix*ny*nz)/nz;
+		uint iz = ind_flat - ix*ny*nz - iy*nz;
 
 		// iterate over the 27 neighboring cells
-		//double dmin = DBL_MAX; 
-		uint zmin = uint_max;
-		for(int o_x = -1; o_x <= 1; ++o_x) {
-			for(int o_y = -1; o_y <= 1; ++o_y) {
-				for(int o_z = -1; o_z <= 1; ++o_z) {
+		double dmin = field[ind_flat]; 
+		uint zmin = zones[ind_flat];// = uint_max;
+		for(int ox = -1; ox <= 1; ++ox) {
+			for(int oy = -1; oy <= 1; ++oy) {
+				for(int oz = -1; oz <= 1; ++oz) {
+
+					if(ox == 0 && oy == 0 && oz == 0) continue;
 
 					// get neighboring flat indices, accounting for periodicity
-					uint tmp_flat = ((i_x + o_x + nx)%nx)*ny*nz + ((i_y + o_y + ny)%ny)*nz + (i_z + o_z + nz)%nz;
+					uint tmp_flat = ((ix + ox + nx)%nx)*ny*nz + ((iy + oy + ny)%ny)*nz + ((iz + oz + nz)%nz);
 
-					// a neighboring zone has been assigned
-					if(zones[tmp_flat] < zmin) {
-						// TODO: This disambiguation has an inherent bias towards deeper voids!
+				//	if(zones[tmp_flat] < zmin) { // This disambiguation has an inherent bias towards deeper voids!
+					if(field[tmp_flat] < dmin) { // finds the neighboring cell with the lowest density 
+					
+						dmin = field[tmp_flat];
 						zmin = zones[tmp_flat];
 						zones[ind_flat] = zmin;
 					}
@@ -103,50 +106,37 @@ void watershed() {
 			}
 		}
 		if(zmin == uint_max) {
-			zones[ind_flat] = ++nzones;
+			zones[ind_flat] = nzones++;
 		}
 
-	//	if(cc > 20) break;
-		++cc;
+		//if(ind_uns%(ntot/10) == 0) printf(".");
 	}
 
 	printf(" done.\n");
-	printf("  Found %u distinct zones.\n", nzones);
+	printf("   Found %u distinct zones.\n", nzones);
 
-}
-
-void write_hdf5() {
-/*
-	char* outfilename = "output/test.hdf5";
-
-	printf("Writing to file: %s...\n", outfilename);
-	vector<float> pos_v(pos_h, pos_h + npart);
-	vector<float> vel_v(vel_h, vel_h + npart);
-	vector<float> phi_v(phi_h, phi_h + ngrid);
-	vector<float> rho_v(rho_h, rho_h + ngrid);
-
-	HDFCreateFile(outfilename);
-	HDFWriteDataset(outfilename, "POS", pos_v);
-	HDFWriteDataset(outfilename, "VEL", vel_v);
-	HDFWriteDataset(outfilename, "PHI", phi_v);
-	HDFWriteDataset(outfilename, "RHO", rho_v);
-
-	printf("...done.\n");
-*/
 }
 
 // read in a multidimensional hdf5 file
 void read_hdf5(string filename, string fieldname) {
-	printf("Reading field %s from file %s...", fieldname.c_str(), filename.c_str());
+	printf(" Reading field %s from file %s...", fieldname.c_str(), filename.c_str());
 	vector<int> dims;
 	HDFGetDatasetExtent(filename, fieldname, dims);
 	nx = dims[0]; ny = dims[1]; nz = dims[2];
 	ntot = nx*ny*nz;
 	HDFReadDataset(filename, fieldname, field);
 	printf(" done.\n");
-	printf("  Read %d data values.\n", field.size());
-	printf("  nx = %d, ny = %d, nz = %d for %d total.\n", nx, ny, nz, ntot);
+	printf("   Read %d data values.\n", (int)field.size());
+	printf("   nx = %d, ny = %d, nz = %d for %d total.\n", nx, ny, nz, ntot);
 	return;
+}
+
+void write_hdf5(string filename, string fieldname) {
+	printf(" Writing field %s to file %s...", fieldname.c_str(), filename.c_str());
+	HDFCreateFile(filename);
+	uint dims[3] = {nx, ny, nz};
+	HDFWriteDataset3D(filename, fieldname, dims, zones);
+	printf(" done.\n");
 }
 
 
@@ -155,10 +145,10 @@ bool indcmp(int a, int b) {
 	return field[a] < field[b];
 }
 void argsort() {
-	printf("Sorting array indices...");
+	printf(" Sorting array indices...");
 	inds_sorted.resize(ntot);
-	int i_tmp = 0;
-	generate(inds_sorted.begin(), inds_sorted.end(), [&] { return i_tmp++; });
+	uint itmp = 0;
+	generate(inds_sorted.begin(), inds_sorted.end(), [&] { return itmp++; });
 	sort(inds_sorted.begin(), inds_sorted.end(), indcmp);
 	printf(" done.\n");
 }
