@@ -37,30 +37,26 @@ vector<uint> zones;
 
 int main(int argc, char **argv) {
 
-	// we want two arguments
-	/*if(argc != 3) {
-		printf("Requires one input file and one output file!\n");
-		exit(0);
+	// we want four arguments
+	if(argc != 5) {
+		printf("-------------------------------------\n");
+		printf(" Usage:\n");
+		printf("   ./wstree input.hdf5 input_field output.hdf5 output_field\n");
+		printf(" Example:\n");
+		printf("   ./wstree data/dset128.hdf5 RHO output/ws128.hdf5 WS\n");
+		printf("-------------------------------------\n");
+		return 0;
 	}
 
-	printf("\n"); 
-
-	*/
-
-	//readInput(argv[1]);
 	printf("-------------------------------------\n");
-	read_hdf5("data/200Mpc-256p-exact-256g-rho.hdf5", "RHO");
-	//read_hdf5("data/dset128.hdf5", "RHO");
+	read_hdf5(argv[1], argv[2]);
 	printf("-------------------------------------\n");
 	argsort();
 	printf("-------------------------------------\n");
 	watershed();
 	printf("-------------------------------------\n");
-	write_hdf5("output/ws256.hdf5", "WS");
-	//write_hdf5("output/ws128.hdf5", "WS");
+	write_hdf5(argv[3], argv[4]);
 	printf("-------------------------------------\n");
-
-	//write_hdf5();
 
 	return 0;    
 }
@@ -117,8 +113,6 @@ void watershed() {
 		if(zmin == uint_max) {
 			zones[ind_flat] = nzones++;
 		}
-
-		//if(ind_uns%(ntot/10) == 0) printf(".");
 	}
 
 	printf(" done.\n");
