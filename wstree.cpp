@@ -19,20 +19,16 @@
 
 // custom macros and typedefs
 using namespace std;
-typedef uint32_t uint;
-#define uint_max UINT32_MAX
+typedef uint32_t luint;
+#define LUINT_MAX UINT32_MAX
 
 // a POD struct for watershed info
 typedef struct {
-//	uint zone_id;
-	uint subzone_0, subzone_1;
+	luint subzone_0, subzone_1;
 	double vol;
 	double mass;
 	double fmin;
-//	double favg;
-
 	double barrier;
-//	uint barrier_neighbor;
 
 } Watershed;
 
@@ -45,12 +41,11 @@ void tree();
 void write_tree(string filename);
 
 // global data arrays
-uint nx, ny, nz, ntot;
+luint nx, ny, nz, ntot;
+luint nzones;
 vector<double> field;
-vector<uint> inds_sorted;
-uint nzones;
-vector<uint> zones; 
-
+vector<luint> inds_sorted;
+vector<luint> zones; 
 vector<Watershed> watersheds;
 
 int main(int argc, char **argv) {
@@ -90,7 +85,7 @@ int main(int argc, char **argv) {
 	printf(" Building heirarchy...");
 	tree();
 
-	//for(uint z = 0; z < 20; ++z) {
+	//for(luint z = 0; z < 20; ++z) {
 		//printf(" Watershed %u:\n", z);
 		//printf("   vol = %f\tmass = %f\tfavg = %f\tfmin = %f\n", watersheds[z].vol, watersheds[z].mass, watersheds[z].favg, watersheds[z].fmin);
 	//}
@@ -116,15 +111,15 @@ void write_tree(string filename) {
 		fprintf(file, "###########################################################################\n");
 
 /*typedef struct {
-//	uint zone_id;
-	uint subzone_0, subzone_1;
+//	luint zone_id;
+	luint subzone_0, subzone_1;
 	double vol;
 	double mass;
 	double fmin;
 //	double favg;
 
 	double barrier;
-//	uint barrier_neighbor;
+//	luint barrier_neighbor;
 
 } Watershed;
 */
@@ -132,7 +127,7 @@ void write_tree(string filename) {
 
 		fprintf(file, "# sub0\tsub1\tvol\tmass\tfmin\tbar\n");
 
-		for(uint z = 0; z < nzones; ++z) {
+		for(luint z = 0; z < nzones; ++z) {
 			Watershed ws = watersheds[z];
 			//fprintf(file, "%011u\t%011u\t%.11f\t%.11f\t%.11f\t%.11f\n",
 			fprintf(file, "%u\t%u\t%lf\t%lf\t%lf\t%lf\n",
@@ -151,16 +146,16 @@ void tree() {
 
 	// fill in leaf information
 	watersheds.resize(nzones);
-	for(uint z = 0; z < nzones; ++z) {
-		watersheds[z].subzone_0 = uint_max;
-		watersheds[z].subzone_1 = uint_max;
+	for(luint z = 0; z < nzones; ++z) {
+		watersheds[z].subzone_0 = LUINT_MAX;
+		watersheds[z].subzone_1 = LUINT_MAX;
 		watersheds[z].vol = 0.0;
 		watersheds[z].mass = 0.0;
 		watersheds[z].fmin = DBL_MAX;
 		watersheds[z].barrier = DBL_MAX;
 	}
-	for(uint i = 0; i < ntot; ++i) {
-		uint z = zones[i];
+	for(luint i = 0; i < ntot; ++i) {
+		luint z = zones[i];
 		double f = field[i];
 		// TODO: use physical units for volume and mass
 		watersheds[z].vol += 1.0;
@@ -168,28 +163,28 @@ void tree() {
 		if(f < watersheds[z].fmin)
 			watersheds[z].fmin = f;
 	}
-//	for(uint z = 0; z < nzones; ++z)
+//	for(luint z = 0; z < nzones; ++z)
 //		watersheds[z].favg = watersheds[z].mass/watersheds[z].vol;
 	
 	// find barrier saddle points and merge zones
-	for(uint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
+	for(luint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
 
 		// get the flattened array index
-		uint ind_flat = inds_sorted[ind_uns];
-		uint z = zones[ind_flat];
+		luint ind_flat = inds_sorted[ind_uns];
+		luint z = zones[ind_flat];
 		double f0 = field[ind_flat];
 
 		// get 3D indices from ind_flat
-		uint ix = ind_flat/(ny*nz);
-		uint iy = (ind_flat - ix*ny*nz)/nz;
-		uint iz = ind_flat - ix*ny*nz - iy*nz;
+		luint ix = ind_flat/(ny*nz);
+		luint iy = (ind_flat - ix*ny*nz)/nz;
+		luint iz = ind_flat - ix*ny*nz - iy*nz;
 
 
 		// TODO: test this barrier-finding method more rigorously...
 
 		// inspect the 26 neighboring cells
 		double fnmin = DBL_MAX;
-		uint znmin = uint_max;
+		luint znmin = LUINT_MAX;
 		for(int ox = -1; ox <= 1; ++ox) {
 			for(int oy = -1; oy <= 1; ++oy) {
 				for(int oz = -1; oz <= 1; ++oz) {
@@ -197,9 +192,9 @@ void tree() {
 					if(ox == 0 && oy == 0 && oz == 0) continue;
 
 					// get neighboring flat indices, accounting for periodicity
-					uint tmp_flat = ((ix + ox + nx)%nx)*ny*nz + ((iy + oy + ny)%ny)*nz + ((iz + oz + nz)%nz);
+					luint tmp_flat = ((ix + ox + nx)%nx)*ny*nz + ((iy + oy + ny)%ny)*nz + ((iz + oz + nz)%nz);
 
-					uint z_neighbor = zones[tmp_flat];
+					luint z_neighbor = zones[tmp_flat];
 					double f_neighbor = field[tmp_flat];
 
 					// check the neighboring watershed
@@ -212,11 +207,11 @@ void tree() {
 			}
 		}
 		// merge the two zones
-		if(znmin != uint_max) {
+		if(znmin != LUINT_MAX) {
 
 			// create a new watershed from the union of the two
 			Watershed ws_new;
-			uint z0, z1;
+			luint z0, z1;
 			if(watersheds[z].fmin < watersheds[znmin].fmin) {
 				z0 = z; z1 = znmin;
 			}
@@ -235,7 +230,7 @@ void tree() {
 
 			// flood the two subzones with the new zone
 			// TODO: make the loop bounds smarter
-			for(uint i = 0; i < ntot; ++i) {
+			for(luint i = 0; i < ntot; ++i) {
 				if(zones[i] == z0 || zones[i] == z1)
 					zones[i] = nzones;
 			}
@@ -253,24 +248,24 @@ void tree() {
 void watershed() {
 
 	nzones = 0;
-	zones.assign(ntot, uint_max); // unassigned zones use uint_max
+	zones.assign(ntot, LUINT_MAX); // unassigned zones use LUINT_MAX
 
-	for(uint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
+	for(luint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
 
 		// get the flattened array index
-		uint ind_flat = inds_sorted[ind_uns];
+		luint ind_flat = inds_sorted[ind_uns];
 
 
 		// get 3D indices from ind_flat
-		uint ix = ind_flat/(ny*nz);
-		uint iy = (ind_flat - ix*ny*nz)/nz;
-		uint iz = ind_flat - ix*ny*nz - iy*nz;
+		luint ix = ind_flat/(ny*nz);
+		luint iy = (ind_flat - ix*ny*nz)/nz;
+		luint iz = ind_flat - ix*ny*nz - iy*nz;
 
 		// iterate over the 26 neighboring cells
 		double f0 = field[ind_flat];
 		//double dmin = f0; 
 		double grad_max = 0.0; 
-		uint zmin = zones[ind_flat];// = uint_max;
+		luint zmin = zones[ind_flat];// = LUINT_MAX;
 		for(int ox = -1; ox <= 1; ++ox) {
 			for(int oy = -1; oy <= 1; ++oy) {
 				for(int oz = -1; oz <= 1; ++oz) {
@@ -278,7 +273,7 @@ void watershed() {
 					if(ox == 0 && oy == 0 && oz == 0) continue;
 
 					// get neighboring flat indices, accounting for periodicity
-					uint tmp_flat = ((ix + ox + nx)%nx)*ny*nz + ((iy + oy + ny)%ny)*nz + ((iz + oz + nz)%nz);
+					luint tmp_flat = ((ix + ox + nx)%nx)*ny*nz + ((iy + oy + ny)%ny)*nz + ((iz + oz + nz)%nz);
 
 					// divide by the pixel distance to isotropize the neighbor stencil
 					double grad = (f0 - field[tmp_flat])/sqrt(ox*ox + oy*oy + oz*oz);
@@ -296,7 +291,7 @@ void watershed() {
 				}
 			}
 		}
-		if(zmin == uint_max) {
+		if(zmin == LUINT_MAX) {
 			zones[ind_flat] = nzones++;
 		}
 	}
@@ -315,19 +310,16 @@ void read_hdf5(string filename, string fieldname) {
 
 void write_hdf5(string filename, string fieldname) {
 	HDFCreateFile(filename);
-	uint dims[3] = {nx, ny, nz};
+	luint dims[3] = {nx, ny, nz};
 	HDFWriteDataset3D(filename, fieldname, dims, zones);
 	return;
 }
 
-bool indcmp(uint a, uint b) { // helper function for argsort
-	return field[a] < field[b];
-}
 void argsort() {
 	inds_sorted.resize(ntot);
-	uint itmp = 0;
+	luint itmp = 0;
 	generate(inds_sorted.begin(), inds_sorted.end(), [&] { return itmp++; });
-	sort(inds_sorted.begin(), inds_sorted.end(), indcmp);
+	sort(inds_sorted.begin(), inds_sorted.end(), [&](luint a, luint b) { return field[a] < field[b]; });
 	return;
 }
 
