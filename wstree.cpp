@@ -24,7 +24,7 @@ typedef uint32_t luint;
 
 // a POD struct for watershed info
 typedef struct {
-	luint subzone_0, subzone_1;
+	luint subzone0, subzone1;
 	double vol;
 	double mass;
 	double fmin;
@@ -131,7 +131,7 @@ void write_tree(string filename) {
 			Watershed ws = watersheds[z];
 			//fprintf(file, "%011u\t%011u\t%.11f\t%.11f\t%.11f\t%.11f\n",
 			fprintf(file, "%u\t%u\t%lf\t%lf\t%lf\t%lf\n",
-					ws.subzone_0, ws.subzone_1, ws.vol, ws.mass, ws.fmin, ws.barrier);
+					ws.subzone0, ws.subzone1, ws.vol, ws.mass, ws.fmin, ws.barrier);
 		}
 
 		fclose(file);
@@ -147,8 +147,8 @@ void tree() {
 	// fill in leaf information
 	watersheds.resize(nzones);
 	for(luint z = 0; z < nzones; ++z) {
-		watersheds[z].subzone_0 = LUINT_MAX;
-		watersheds[z].subzone_1 = LUINT_MAX;
+		watersheds[z].subzone0 = LUINT_MAX;
+		watersheds[z].subzone1 = LUINT_MAX;
 		watersheds[z].vol = 0.0;
 		watersheds[z].mass = 0.0;
 		watersheds[z].fmin = DBL_MAX;
@@ -179,12 +179,10 @@ void tree() {
 		luint iy = (ind_flat - ix*ny*nz)/nz;
 		luint iz = ind_flat - ix*ny*nz - iy*nz;
 
-
-		// TODO: test this barrier-finding method more rigorously...
-
 		// inspect the 26 neighboring cells
 		double fnmin = DBL_MAX;
 		luint znmin = LUINT_MAX;
+		double grad_min = DBL_MAX; 
 		for(int ox = -1; ox <= 1; ++ox) {
 			for(int oy = -1; oy <= 1; ++oy) {
 				for(int oz = -1; oz <= 1; ++oz) {
@@ -197,9 +195,14 @@ void tree() {
 					luint z_neighbor = zones[tmp_flat];
 					double f_neighbor = field[tmp_flat];
 
-					// check the neighboring watershed
-					// TODO: check this...
-					if(z != z_neighbor && f_neighbor < fnmin) {	
+					// divide by the pixel distance to isotropize the neighbor stencil
+					double grad = (f_neighbor - f0)/sqrt(ox*ox + oy*oy + oz*oz);
+
+					// check for a neighboring watershed with the shallowest gradient
+					if(z != z_neighbor && grad < grad_min) {	
+
+						grad_min = grad;
+
 						fnmin = f_neighbor;
 						znmin = z_neighbor;
 					}
@@ -221,8 +224,8 @@ void tree() {
 			watersheds[z0].barrier = fnmin;
 			watersheds[z1].barrier = fnmin;
 
-			ws_new.subzone_0 = z0;
-			ws_new.subzone_1 = z1;
+			ws_new.subzone0 = z0;
+			ws_new.subzone1 = z1;
 			ws_new.vol = watersheds[z0].vol + watersheds[z1].vol;
 			ws_new.mass = watersheds[z0].mass + watersheds[z1].mass;
 			ws_new.fmin = watersheds[z0].fmin;
