@@ -15,6 +15,7 @@
 #include <string>
 #include <cstdint>
 #include <cfloat>
+#include <cmath>
 #include "HDF_IO.hh"
 
 // custom macros and typedefs
