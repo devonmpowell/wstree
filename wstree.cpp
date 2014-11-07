@@ -25,12 +25,15 @@ typedef uint32_t luint;
 
 // a POD struct for watershed info
 typedef struct {
-	luint subzone0, subzone1;
+	//luint subzone0, subzone1;
+	//vector<luint> subws;
+	luint parent;
 	double vol;
 	double mass;
 	double fmin;
 	double barrier;
-
+	//luint core; // flat index of zone minimum
+	luint depth;
 } Watershed;
 
 // forward declarations
@@ -51,13 +54,15 @@ vector<Watershed> watersheds;
 
 int main(int argc, char **argv) {
 
+	setbuf(stdout, NULL);
+
 	// we want four arguments
 	if(argc != 5) {
 		printf("-------------------------------------\n");
 		printf(" Usage:\n");
-		printf("   ./wstree input.hdf5 input_field output.hdf5 output_field\n");
+		printf("   ./wstree input.hdf5 input_field output.hdf5 output.txt\n");
 		printf(" Example:\n");
-		printf("   ./wstree data/dset128.hdf5 RHO output/ws128.hdf5 WS\n");
+		printf("   ./wstree data/dset128.hdf5 RHO output/ws128.hdf5 output/tree128.txt\n");
 		printf("-------------------------------------\n");
 		return 0;
 	}
@@ -79,7 +84,7 @@ int main(int argc, char **argv) {
 	printf("   Found %u distinct zones.\n", nzones);
 	printf("-------------------------------------\n");
 	printf(" Writing field %s to file %s...", argv[4], argv[3]);
-	write_hdf5(argv[3], argv[4]);
+	write_hdf5(argv[3], "WS");
 	printf(" done.\n");
 	printf("-------------------------------------\n");
 
@@ -90,9 +95,8 @@ int main(int argc, char **argv) {
 		//printf(" Watershed %u:\n", z);
 		//printf("   vol = %f\tmass = %f\tfavg = %f\tfmin = %f\n", watersheds[z].vol, watersheds[z].mass, watersheds[z].favg, watersheds[z].fmin);
 	//}
-	printf("nzones = %u\n", nzones);
 
-	write_tree("output/tree128.dat");
+	write_tree(argv[4]);
 
 	printf(" done.\n");
 	printf("-------------------------------------\n");
@@ -110,29 +114,12 @@ void write_tree(string filename) {
 		fprintf(file, "###########################################################################\n");
 		fprintf(file, "#    TREE											                     #\n");
 		fprintf(file, "###########################################################################\n");
-
-/*typedef struct {
-//	luint zone_id;
-	luint subzone_0, subzone_1;
-	double vol;
-	double mass;
-	double fmin;
-//	double favg;
-
-	double barrier;
-//	luint barrier_neighbor;
-
-} Watershed;
-*/
-
-
-		fprintf(file, "# sub0\tsub1\tvol\tmass\tfmin\tbar\n");
+		fprintf(file, "# parent\ttdepth\tvol\tmass\tfmin\tbar\n");
 
 		for(luint z = 0; z < nzones; ++z) {
 			Watershed ws = watersheds[z];
-			//fprintf(file, "%011u\t%011u\t%.11f\t%.11f\t%.11f\t%.11f\n",
 			fprintf(file, "%u\t%u\t%lf\t%lf\t%lf\t%lf\n",
-					ws.subzone0, ws.subzone1, ws.vol, ws.mass, ws.fmin, ws.barrier);
+					ws.parent, ws.depth, ws.vol, ws.mass, ws.fmin, ws.barrier);
 		}
 
 		fclose(file);
@@ -142,14 +129,41 @@ void write_tree(string filename) {
 	}
 
 }
+/*
+// recursively floods a region of the box
+void rfill(luint ix, luint iy, luint iz, luint zsearch, luint zfill, luint depth) {
+
+	for(int ox = -1; ox <= 1; ++ox) {
+		for(int oy = -1; oy <= 1; ++oy) {
+			for(int oz = -1; oz <= 1; ++oz) {
+	
+				luint ixn = (ix + ox + nx)%nx;
+				luint iyn = (iy + oy + ny)%ny;
+				luint izn = (iz + oz + nz)%nz;
+				luint tmp_flat = ixn*ny*nz +iyn*nz + izn;
+
+				//printf("%u ", depth);
+	
+				if(ox == 0 && oy == 0 && oz == 0) {
+					zones[tmp_flat] = zfill;
+				}
+				else if(zones[tmp_flat] == zsearch)	 {
+					rfill(ixn, iyn, izn, zsearch, zfill, depth + 1);
+				}
+			}
+		
+		}
+	}
+	return;
+}*/
 
 void tree() {
 
 	// fill in leaf information
 	watersheds.resize(nzones);
 	for(luint z = 0; z < nzones; ++z) {
-		watersheds[z].subzone0 = LUINT_MAX;
-		watersheds[z].subzone1 = LUINT_MAX;
+		//watersheds[z].subws.push_back(z);
+		watersheds[z].parent = LUINT_MAX;
 		watersheds[z].vol = 0.0;
 		watersheds[z].mass = 0.0;
 		watersheds[z].fmin = DBL_MAX;
@@ -164,11 +178,12 @@ void tree() {
 		if(f < watersheds[z].fmin)
 			watersheds[z].fmin = f;
 	}
-//	for(luint z = 0; z < nzones; ++z)
-//		watersheds[z].favg = watersheds[z].mass/watersheds[z].vol;
+	
 	
 	// find barrier saddle points and merge zones
 	for(luint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
+
+		//printf("%u\n", ind_uns);
 
 		// get the flattened array index
 		luint ind_flat = inds_sorted[ind_uns];
@@ -201,20 +216,16 @@ void tree() {
 
 					// check for a neighboring watershed with the shallowest gradient
 					if(z != z_neighbor && grad < grad_min) {	
-
 						grad_min = grad;
-
 						fnmin = f_neighbor;
 						znmin = z_neighbor;
 					}
 				}
 			}
 		}
-		// merge the two zones
+		// have we found a saddle point?
 		if(znmin != LUINT_MAX) {
 
-			// create a new watershed from the union of the two
-			Watershed ws_new;
 			luint z0, z1;
 			if(watersheds[z].fmin < watersheds[znmin].fmin) {
 				z0 = z; z1 = znmin;
@@ -222,27 +233,38 @@ void tree() {
 			else {
 				z0 = znmin; z1 = z;
 			}
-			watersheds[z0].barrier = fnmin;
+
+			// merge z1 into z0
+			//watersheds[z0].subws.push_back(z1);
+			//watersheds[z0].vol += watersheds[z1].vol;
+			//watersheds[z0].mass += watersheds[z1].mass;
+			
 			watersheds[z1].barrier = fnmin;
+			watersheds[z1].parent = z0;
 
-			ws_new.subzone0 = z0;
-			ws_new.subzone1 = z1;
-			ws_new.vol = watersheds[z0].vol + watersheds[z1].vol;
-			ws_new.mass = watersheds[z0].mass + watersheds[z1].mass;
-			ws_new.fmin = watersheds[z0].fmin;
-			ws_new.barrier = DBL_MAX;//fnmin;
 
-			// flood the two subzones with the new zone
-			// TODO: make the loop bounds smarter
-			for(luint i = 0; i < ntot; ++i) {
-				if(zones[i] == z0 || zones[i] == z1)
-					zones[i] = nzones;
-			}
+			// flood the annexed subzones with its new parent
+			// TODO: make the loop bounds smarter; this is N^2!
+			//rfill(ix, iy, iz, z1, z0, 0);
 
-			// add the newest parent zone
-			watersheds.push_back(ws_new);
-			++nzones;
 		}
+	}
+
+	// This takes advantage of the top-down ordering of voids
+	for(luint z = 0; z < nzones; ++z) {
+	//for(luint z = nzones - 1; z >= 0; --z) {
+		luint depth = 0;
+		luint parent = watersheds[z].parent;
+
+		//if(parent == LUINT_MAX) printf("root");
+
+		while(parent < LUINT_MAX) {
+			++depth;
+			watersheds[parent].vol += watersheds[z].vol;
+			watersheds[parent].mass += watersheds[z].mass;
+			parent = watersheds[parent].parent;
+		}
+		watersheds[z].depth = depth;
 	}
 
 	return;
@@ -259,7 +281,6 @@ void watershed() {
 		// get the flattened array index
 		luint ind_flat = inds_sorted[ind_uns];
 
-
 		// get 3D indices from ind_flat
 		luint ix = ind_flat/(ny*nz);
 		luint iy = (ind_flat - ix*ny*nz)/nz;
@@ -267,7 +288,6 @@ void watershed() {
 
 		// iterate over the 26 neighboring cells
 		double f0 = field[ind_flat];
-		//double dmin = f0; 
 		double grad_max = 0.0; 
 		luint zmin = zones[ind_flat];// = LUINT_MAX;
 		for(int ox = -1; ox <= 1; ++ox) {
@@ -282,13 +302,8 @@ void watershed() {
 					// divide by the pixel distance to isotropize the neighbor stencil
 					double grad = (f0 - field[tmp_flat])/sqrt(ox*ox + oy*oy + oz*oz);
 
-					//if(zones[tmp_flat] < zmin) { // This disambiguation has an inherent bias towards deeper voids!
-					//if(field[tmp_flat] < dmin) { // finds the neighboring cell with the lowest density 
 					if(grad > grad_max) { // finds the largest gradient to a neighboring cell 
-					
-						//dmin = field[tmp_flat];
 						grad_max = grad;
-						
 						zmin = zones[tmp_flat];
 						zones[ind_flat] = zmin;
 					}
@@ -296,8 +311,20 @@ void watershed() {
 			}
 		}
 		if(zmin == LUINT_MAX) {
+			//Watershed wsn;
+			//wsn.parent = LUINT_MAX;
+			//wsn.core = ind_flat;
+			//wsn.vol = 1.0;
+			//wsn.mass = f0;
+			//wsn.fmin = f0;
+			//wsn.barrier = DBL_MAX;
+			//watersheds.push_back(wsn);
 			zones[ind_flat] = nzones++;
 		}
+		//else {
+			//watersheds[zmin].vol += 1.0;
+			//watersheds[zmin].mass += f0;
+		//}
 	}
 	return;
 }
