@@ -157,6 +157,7 @@ void rfill(luint ix, luint iy, luint iz, luint zsearch, luint zfill, luint depth
 	return;
 }*/
 
+
 void tree() {
 
 	// fill in leaf information
@@ -183,7 +184,6 @@ void tree() {
 	// find barrier saddle points and merge zones
 	for(luint ind_uns = 0; ind_uns < ntot; ++ind_uns) {
 
-		//printf("%u\n", ind_uns);
 
 		// get the flattened array index
 		luint ind_flat = inds_sorted[ind_uns];
@@ -223,46 +223,50 @@ void tree() {
 				}
 			}
 		}
-		// have we found a saddle point?
 		if(znmin != LUINT_MAX) {
-
-			luint z0, z1;
-			if(watersheds[z].fmin < watersheds[znmin].fmin) {
-				z0 = z; z1 = znmin;
-			}
-			else {
-				z0 = znmin; z1 = z;
-			}
-
-			// merge z1 into z0
-			//watersheds[z0].subws.push_back(z1);
-			//watersheds[z0].vol += watersheds[z1].vol;
-			//watersheds[z0].mass += watersheds[z1].mass;
+			// we have found a saddle point
 			
-			watersheds[z1].barrier = fnmin;
-			watersheds[z1].parent = z0;
+			// find the global parent void of z0
+			luint z0 = z;
+			luint gp0 = z0; 
+			while(watersheds[gp0].parent < LUINT_MAX) {
+				gp0 = watersheds[gp0].parent;
+			}
 
+			// find the global parent void of z1
+			luint z1 = znmin;
+			luint gp1 = z1; 
+			while(watersheds[gp1].parent < LUINT_MAX) {
+				gp1 = watersheds[gp1].parent;
+			}
 
-			// flood the annexed subzones with its new parent
-			// TODO: make the loop bounds smarter; this is N^2!
-			//rfill(ix, iy, iz, z1, z0, 0);
+			if(gp0 == gp1) continue; // this saddle point is between voids that have already merged
 
+			if(watersheds[gp0].fmin < watersheds[gp1].fmin) {
+				watersheds[gp1].barrier = fnmin;
+				watersheds[gp1].parent = gp0;
+				watersheds[gp0].vol += watersheds[gp1].vol;
+				watersheds[gp0].mass += watersheds[gp1].mass;
+			} else {
+				watersheds[gp0].barrier = fnmin;
+				watersheds[gp0].parent = gp1;
+				watersheds[gp1].vol += watersheds[gp0].vol;
+				watersheds[gp1].mass += watersheds[gp0].mass;
+
+			}
 		}
 	}
 
-	// This takes advantage of the top-down ordering of voids
+	// post-processing to get tree depth 
 	for(luint z = 0; z < nzones; ++z) {
-	//for(luint z = nzones - 1; z >= 0; --z) {
 		luint depth = 0;
 		luint parent = watersheds[z].parent;
 
-		//if(parent == LUINT_MAX) printf("root");
-
 		while(parent < LUINT_MAX) {
-			++depth;
-			watersheds[parent].vol += watersheds[z].vol;
-			watersheds[parent].mass += watersheds[z].mass;
+			//watersheds[parent].vol += watersheds[z].vol;
+			//watersheds[parent].mass += watersheds[z].mass;
 			parent = watersheds[parent].parent;
+			++depth;
 		}
 		watersheds[z].depth = depth;
 	}
