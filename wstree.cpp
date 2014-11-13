@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
 	printf(" done.\n");
 	printf("   Found %u distinct zones.\n", nzones);
 	printf("-------------------------------------\n");
-	printf(" Writing field %s to file %s...", argv[4], argv[3]);
+	printf(" Writing field %s to file %s...", "WS", argv[3]);
 	write_hdf5(argv[3], "WS");
 	printf(" done.\n");
 	printf("-------------------------------------\n");
@@ -129,34 +129,6 @@ void write_tree(string filename) {
 	}
 
 }
-/*
-// recursively floods a region of the box
-void rfill(luint ix, luint iy, luint iz, luint zsearch, luint zfill, luint depth) {
-
-	for(int ox = -1; ox <= 1; ++ox) {
-		for(int oy = -1; oy <= 1; ++oy) {
-			for(int oz = -1; oz <= 1; ++oz) {
-	
-				luint ixn = (ix + ox + nx)%nx;
-				luint iyn = (iy + oy + ny)%ny;
-				luint izn = (iz + oz + nz)%nz;
-				luint tmp_flat = ixn*ny*nz +iyn*nz + izn;
-
-				//printf("%u ", depth);
-	
-				if(ox == 0 && oy == 0 && oz == 0) {
-					zones[tmp_flat] = zfill;
-				}
-				else if(zones[tmp_flat] == zsearch)	 {
-					rfill(ixn, iyn, izn, zsearch, zfill, depth + 1);
-				}
-			}
-		
-		}
-	}
-	return;
-}*/
-
 
 void tree() {
 
@@ -275,6 +247,54 @@ void tree() {
 }
 
 
+// floods a region of the box
+#include <stack>
+void cflood(luint ind_flat, luint zid, double tol) {
+	//zones[ind_flat] = zid;
+	
+	double f0 = field[ind_flat];
+	tol += 1.0; // a multiplicative tolerance
+
+	stack<luint> fcells;
+	fcells.push(ind_flat);
+
+	do {
+
+		ind_flat = fcells.top();
+		fcells.pop();
+		zones[ind_flat] = zid; // fil the current cell
+
+		// get 3D indices from ind_flat
+		luint ix = ind_flat/(ny*nz);
+		luint iy = (ind_flat - ix*ny*nz)/nz;
+		luint iz = ind_flat - ix*ny*nz - iy*nz;
+
+		for(int ox = -1; ox <= 1; ++ox) {
+			for(int oy = -1; oy <= 1; ++oy) {
+				for(int oz = -1; oz <= 1; ++oz) {
+
+					if(ox == 0 && oy == 0 && oz == 0) continue;
+		
+					luint ixn = (ix + ox + nx)%nx;
+					luint iyn = (iy + oy + ny)%ny;
+					luint izn = (iz + oz + nz)%nz;
+					luint tmp_flat = ixn*ny*nz +iyn*nz + izn;
+	
+
+					if(zones[tmp_flat] == LUINT_MAX && field[tmp_flat] < tol*f0) {
+						fcells.push(tmp_flat);
+					}
+				}
+			}
+		}
+
+	} while(!fcells.empty());
+
+
+	return;
+}
+
+
 void watershed() {
 
 	nzones = 0;
@@ -285,6 +305,9 @@ void watershed() {
 		// get the flattened array index
 		luint ind_flat = inds_sorted[ind_uns];
 
+		luint zmin = zones[ind_flat];
+		if(zmin < LUINT_MAX) continue; // this cell is already flooded - skip it.
+
 		// get 3D indices from ind_flat
 		luint ix = ind_flat/(ny*nz);
 		luint iy = (ind_flat - ix*ny*nz)/nz;
@@ -293,7 +316,7 @@ void watershed() {
 		// iterate over the 26 neighboring cells
 		double f0 = field[ind_flat];
 		double grad_max = 0.0; 
-		luint zmin = zones[ind_flat];// = LUINT_MAX;
+
 		for(int ox = -1; ox <= 1; ++ox) {
 			for(int oy = -1; oy <= 1; ++oy) {
 				for(int oz = -1; oz <= 1; ++oz) {
@@ -323,7 +346,8 @@ void watershed() {
 			//wsn.fmin = f0;
 			//wsn.barrier = DBL_MAX;
 			//watersheds.push_back(wsn);
-			zones[ind_flat] = nzones++;
+			cflood(ind_flat, nzones++, 1.0e-4);
+			//zones[ind_flat] = nzones++;
 		}
 		//else {
 			//watersheds[zmin].vol += 1.0;
